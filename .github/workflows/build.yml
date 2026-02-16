@@ -73,7 +73,7 @@ jobs:
 
           # Hisilicon [HI3516CV300]
           - hi3516cv300_lite
-          - hi3516ev100_lite
+          #- hi3516ev100_lite
 
           # Hisilicon [HI3516CV500]
         # - hi3516av300_lite
@@ -119,7 +119,7 @@ jobs:
 
           # Grainmedia
          # - gm8135_lite
-          - gm8136_lite
+         # - gm8136_lite
 
           # Novatek
          # - nt98562_lite
