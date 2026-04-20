@@ -9,14 +9,13 @@ on:
 env:
   TAG_NAME: latest
   
-permissions:
-  contents: write
-  
 jobs:
   buildroot:
     name: Firmware (${{inputs.platform}})
     runs-on: ubuntu-latest
-
+    if: github.repository == 'sergshadrap/OpenIpcSergnew'
+    permissions:
+      contents: write
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
