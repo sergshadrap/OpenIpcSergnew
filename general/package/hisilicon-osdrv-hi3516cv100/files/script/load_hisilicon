@@ -9,7 +9,12 @@ mem_start=0x80000000 # phy mem start
 mem_total=$(fw_printenv -n totalmem | tr -d 'M')
 mem_total=${mem_total:=64}
 
-os_mem_size=$(fw_printenv -n osmem | tr -d 'M')
+# Prefer kernel cmdline mem=NM -- that's the authoritative kernel/MMZ split.
+# Fall back to U-Boot osmem env only when the kernel was booted without mem=.
+os_mem_size=$(awk 'BEGIN{RS=" "} /^mem=[0-9]+M/{gsub(/^mem=|M.*$/,""); print; exit}' /proc/cmdline)
+if [ -z "$os_mem_size" ]; then
+	os_mem_size=$(fw_printenv -n osmem | tr -d 'M')
+fi
 os_mem_size=${os_mem_size:=32}
 
 # Sensor config
@@ -37,9 +42,9 @@ insert_detect() {
 }
 
 remove_detect() {
-	rmmod -w ssp_sony &>/dev/null
-	rmmod -w ssp_pana &>/dev/null
-	rmmod -w ssp_ad9020 &>/dev/null
+	rmmod -w open_ssp_sony &>/dev/null
+	rmmod -w open_ssp_pana &>/dev/null
+	rmmod -w open_ssp_ad9020 &>/dev/null
 	rmmod -w hi_i2c
 	rmmod -w hi3518_isp
 	rmmod -w hi3518_sys
@@ -149,9 +154,9 @@ insert_sns() {
 remove_sns() {
 	rmmod -w hi_i2c &>/dev/null
 	rmmod -w ssp &>/dev/null
-	rmmod -w ssp_sony &>/dev/null
-	rmmod -w ssp_pana &>/dev/null
-	rmmod -w ssp_ad9020 &>/dev/null
+	rmmod -w open_ssp_sony &>/dev/null
+	rmmod -w open_ssp_pana &>/dev/null
+	rmmod -w open_ssp_ad9020 &>/dev/null
 }
 
 sys_config() {
