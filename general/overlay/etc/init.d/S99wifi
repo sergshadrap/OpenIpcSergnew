@@ -1,0 +1,13 @@
+#!/bin/sh
+
+echo "=== Loading RTL8188EU WiFi driver ===" > /dev/kmsg
+
+# Try to load the module
+insmod /lib/modules/3.0.8/extra/8188eu.ko rtw_power_mgnt=0 rtw_enforce_country=0 2>&1 | tee /dev/kmsg
+
+sleep 2
+
+echo "=== WiFi status after loading ===" > /dev/kmsg
+iwconfig
+ip link show
+lsmod | grep 8188
