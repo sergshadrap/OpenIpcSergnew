@@ -1,0 +1,5 @@
+config BR2_PACKAGE_RTL8188EU_OPENIPC
+    bool "rtl8188eu-openipc"
+    depends on BR2_LINUX_KERNEL
+    help
+      RTL8188EU driver for OpenIPC (compiled from source)
