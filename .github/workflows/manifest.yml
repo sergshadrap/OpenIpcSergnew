@@ -1,12 +1,12 @@
-name: manifest
-on:
-  workflow_run:
-    workflows: [build]
-    types: [completed]
-  workflow_dispatch:
+# name: manifest
+#on:
+#  workflow_run:
+#    workflows: [build]
+#    types: [completed]
+#  workflow_dispatch:
 
-permissions:
-  contents: write
+#permissions:
+#  contents: write
 
 concurrency:
   group: gh-pages-manifest
