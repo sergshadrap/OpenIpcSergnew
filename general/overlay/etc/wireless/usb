@@ -68,6 +68,7 @@ if [ "$1" = "atbm6012b-gk7205v300-xm-g6s" ]; then
   set_gpio 7 0
 	modprobe atbm6012b_wifi_usb
 	exit 0
+fi
 
 # GK7205V200 CamHi
 if [ "$1" = "rtl8733bu-gk7205v200-camhi" ]; then
