@@ -23,6 +23,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: bash .github/scripts/test_load_hisilicon.sh
+      # load_goke runs under busybox sh and awk on the camera, and its zone
+      # arithmetic depends on busybox awk reading hex.
+      - name: Install busybox
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq busybox-static
+      - run: bash .github/scripts/test_load_goke.sh
+      - run: bash .github/scripts/test_load_novatek.sh
+      - run: bash .github/scripts/test_load_hisilicon_layout.sh
 
   sysupgrade-verify:
     name: sysupgrade rootfs verification
@@ -37,6 +46,11 @@ jobs:
       # in the job below, against the busybox ash the device actually uses. This
       # step was `sh -n` then `dash -n`, which on ubuntu-latest is the same
       # check twice (/bin/sh is dash) and neither is the target shell.
+      # busybox for the suite's timeout: the camera's applet, not the host's.
+      - name: Install busybox
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq busybox-static
       - run: bash .github/scripts/test_sysupgrade.sh
 
       # The copy in git is not the copy that ships: the build strips whole-line
@@ -49,6 +63,77 @@ jobs:
           awk -f general/scripts/strip-shell-comments.awk \
             general/overlay/usr/sbin/sysupgrade > /tmp/sysupgrade.stripped
           SRC=/tmp/sysupgrade.stripped bash .github/scripts/test_sysupgrade.sh
+
+  crashlog-capture:
+    name: crash log capture
+    if: >-
+      github.repository == 'OpenIPC/firmware' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && !github.event.repository.private)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash .github/scripts/test_crashlog.sh
+
+      # S98crashlog ships comment-stripped, like sysupgrade and extutils, and
+      # runs on the boot after every crash: the stripped form is what decides
+      # whether the evidence survives.
+      - name: Re-run against the stripped form that actually ships
+        run: |
+          awk -f general/scripts/strip-shell-comments.awk \
+            general/package/openipc-failsafe/files/S98crashlog > /tmp/S98crashlog.stripped
+          SRC=/tmp/S98crashlog.stripped bash .github/scripts/test_crashlog.sh
+
+  majestic-supervise:
+    name: majestic restarted after a crash, never in a loop
+    if: >-
+      github.repository == 'OpenIPC/firmware' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && !github.event.repository.private)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash .github/scripts/test_majestic_supervise.sh
+      - name: Re-run against the comment-stripped form
+        run: |
+          awk -f general/scripts/strip-shell-comments.awk \
+            general/package/majestic/files/S95majestic > /tmp/S95majestic.stripped
+          SRC=/tmp/S95majestic.stripped bash .github/scripts/test_majestic_supervise.sh
+
+  vigil-supervise:
+    name: vigil restarted after a crash, its arguments and recording path
+    if: >-
+      github.repository == 'OpenIPC/firmware' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && !github.event.repository.private)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash .github/scripts/test_vigil_supervise.sh
+      - name: Re-run against the comment-stripped form
+        run: |
+          awk -f general/scripts/strip-shell-comments.awk \
+            general/package/vigil/files/S95vigil > /tmp/S95vigil.stripped
+          SRC=/tmp/S95vigil.stripped bash .github/scripts/test_vigil_supervise.sh
+
+  network-failover:
+    name: cable-primary networking and its carrier watcher
+    if: >-
+      github.repository == 'OpenIPC/firmware' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && !github.event.repository.private)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash .github/scripts/test_network_failover.sh
+      - name: Re-run against the comment-stripped forms
+        run: |
+          awk -f general/scripts/strip-shell-comments.awk \
+            general/overlay/etc/init.d/S40network > /tmp/S40network.stripped
+          awk -f general/scripts/strip-shell-comments.awk \
+            general/overlay/usr/share/udhcpc/default.script > /tmp/default.script.stripped
+          S40=/tmp/S40network.stripped DS=/tmp/default.script.stripped \
+            bash .github/scripts/test_network_failover.sh
 
   camera-mac:
     name: the MAC the camera gives itself
@@ -70,6 +155,26 @@ jobs:
           awk -f general/scripts/strip-shell-comments.awk \
             general/overlay/usr/sbin/extutils > /tmp/extutils.stripped
           SRC=/tmp/extutils.stripped bash .github/scripts/test_check_mac.sh
+
+  init-overlay:
+    name: init keeps an overlay it cannot mount
+    if: >-
+      github.repository == 'OpenIPC/firmware' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && !github.event.repository.private)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash .github/scripts/test_init_overlay.sh
+
+      # /init is comment-stripped into every image and decides, on every boot
+      # of every camera, whether rootfs_data is erased. The stripped form is
+      # the one that has to get that right.
+      - name: Re-run against the stripped form that actually ships
+        run: |
+          awk -f general/scripts/strip-shell-comments.awk \
+            general/overlay/init > /tmp/init.stripped
+          SRC=/tmp/init.stripped bash .github/scripts/test_init_overlay.sh
 
   # Only sysupgrade was ever parse-checked; every other script in the image --
   # the init scripts, /etc/profile, /init on initramfs boards, the vendor load_*
@@ -117,6 +222,20 @@ jobs:
       # or a keep-list edit is checked without a build (#2508).
       - run: bash .github/scripts/test_ca_bundle_lite.sh
 
+  build-request:
+    name: build request parser refuses what it must
+    if: >-
+      github.repository == 'OpenIPC/firmware' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && !github.event.repository.private)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # build-one.yml feeds an issue body -- text anyone can write -- through
+      # build_request.sh into a defconfig. This pins that only
+      # `# BR2_<NAME> is not set` lines get through.
+      - run: bash .github/scripts/test_build_request.sh
+
   shipped-shell-parse:
     name: shipped shell scripts parse
     if: >-
@@ -159,9 +278,14 @@ jobs:
       - load-hisilicon-parsing
       - sysupgrade-verify
       - camera-mac
+      - init-overlay
+      - crashlog-capture
       - excludes-report
       - ca-bundle-lite
       - shipped-shell-parse
+      - build-request
+      - network-failover
+      - vigil-supervise
     # always() so the gate reports when a needed job fails, but not on a run
     # whose jobs the guard above deliberately skipped. Upstream the added
     # disjunct is true, so this reduces to always().
@@ -174,7 +298,7 @@ jobs:
     steps:
       - name: Require every shell test to succeed
         run: |
-          echo "load-hisilicon=${{ needs.load-hisilicon-parsing.result }} sysupgrade=${{ needs.sysupgrade-verify.result }} camera-mac=${{ needs.camera-mac.result }} excludes=${{ needs.excludes-report.result }} ca-bundle=${{ needs.ca-bundle-lite.result }} shell-parse=${{ needs.shipped-shell-parse.result }}"
+          echo "load-hisilicon=${{ needs.load-hisilicon-parsing.result }} sysupgrade=${{ needs.sysupgrade-verify.result }} camera-mac=${{ needs.camera-mac.result }} init-overlay=${{ needs.init-overlay.result }} crashlog=${{ needs.crashlog-capture.result }} excludes=${{ needs.excludes-report.result }} ca-bundle=${{ needs.ca-bundle-lite.result }} shell-parse=${{ needs.shipped-shell-parse.result }} build-request=${{ needs.build-request.result }} network-failover=${{ needs.network-failover.result }} vigil=${{ needs.vigil-supervise.result }}"
           # 'skipped' is not accepted, for the reason given in lint.yml: a
           # skipped job would take this context green having checked nothing.
           if [ "${{ needs.load-hisilicon-parsing.result }}" != "success" ]; then
@@ -183,8 +307,23 @@ jobs:
           if [ "${{ needs.sysupgrade-verify.result }}" != "success" ]; then
             echo "::error::sysupgrade rootfs verification did not succeed"; exit 1
           fi
+          if [ "${{ needs.build-request.result }}" != "success" ]; then
+            echo "::error::build request parser tests did not succeed"; exit 1
+          fi
+          if [ "${{ needs.network-failover.result }}" != "success" ]; then
+            echo "::error::network failover tests did not succeed"; exit 1
+          fi
+          if [ "${{ needs.vigil-supervise.result }}" != "success" ]; then
+            echo "::error::S95vigil supervisor tests did not succeed"; exit 1
+          fi
           if [ "${{ needs.camera-mac.result }}" != "success" ]; then
             echo "::error::the MAC the camera gives itself did not succeed"; exit 1
+          fi
+          if [ "${{ needs.init-overlay.result }}" != "success" ]; then
+            echo "::error::init keeping an overlay it cannot mount did not succeed"; exit 1
+          fi
+          if [ "${{ needs.crashlog-capture.result }}" != "success" ]; then
+            echo "::error::crash log capture did not succeed"; exit 1
           fi
           if [ "${{ needs.excludes-report.result }}" != "success" ]; then
             echo "::error::excludes lists report did not succeed"; exit 1

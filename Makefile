@@ -164,22 +164,36 @@ else
 	@$(call PREPARE_REPACK,uImage,16384,,,nfs-root)
 endif
 else
-ifeq ($(BR2_OPENIPC_SOC_FAMILY),"hi3516cv6xx")
-# The cv610 u-boot boots from a fixed table: 2048K(kernel) read whole by
-# `sf read ${kernaddr} ${kernsize}`, then 5120K(rootfs) at a fixed offset. The
-# combined firmware.bin hides both bounds, so on the 8 MiB part measure the two
-# halves against their slots here, where a PR sees it. 16 MiB is left on the
-# whole-blob figure: its kernel already overruns 2048K on master, and that is a
-# u-boot table question, not one a size check here can settle.
+ifneq ($(wildcard $(TARGET)/images/firmware.bin),)
+# The NOR split layout (general/scripts/post-image-split.sh): firmware.bin is
+# the uImage and the squashfs back to back in one "firmware" partition the
+# kernel splits at boot, whatever bootloader loaded it, shipped as the -split
+# package. Only its whole is bounded: the chip, less what comes before the
+# firmware partition (BR2_OPENIPC_NOR_FIRMWARE_OFFSET) and the smallest overlay
+# worth keeping (256K).
+#
+# A board whose older cameras upgrade from fixed slots also ships those, the
+# plain package of uImage and rootfs. The uImage stays a 64 KiB block short of
+# its 2 MiB slot: under 1984K, which CHECK_SIZE, counting whole KB, enforces as
+# 1983K. The kernel, U-Boot and sysupgrade tell the layouts apart by where the
+# squashfs is: at the block right after the uImage is the split layout, at the
+# slot boundary fixed slots. A fixed-slot uImage ending in the slot's last block
+# would be both.
+#
+# The fixed-slot package is the extra: a build whose uImage or rootfs has
+# outgrown its slot ships the split package alone rather than failing, and
+# says so. Cameras on fixed slots then upgrade to the split layout, which
+# sysupgrade and defib install from the -split package.
+ifeq ($(BR2_OPENIPC_NOR_FIXED_PACKAGE),y)
 ifeq ($(BR2_OPENIPC_FLASH_SIZE),"8")
-	@$(call CHECK_SIZE,fitImage,2048)
-	@$(call CHECK_SIZE,rootfs.squashfs,5120)
+	@$(if $(call FIXED_SLOTS_FIT,5120),$(call PREPARE_REPACK,uImage,1983,rootfs.squashfs,5120,nor),$(call FIXED_SLOTS_SKIP,5120))
+else
+	@$(if $(call FIXED_SLOTS_FIT,8192),$(call PREPARE_REPACK,uImage,1983,rootfs.squashfs,8192,nor),$(call FIXED_SLOTS_SKIP,8192))
 endif
-	@$(call PREPARE_REPACK,firmware.bin,$(shell expr $(subst ",,$(BR2_OPENIPC_FLASH_SIZE)) \* 1024),,,nor)
-else ifeq ($(BR2_OPENIPC_SOC_FAMILY),"hi3519dv500")
-	@$(call PREPARE_REPACK,firmware.bin,$(shell expr $(subst ",,$(BR2_OPENIPC_FLASH_SIZE)) \* 1024),,,nor)
-else ifneq ($(wildcard $(TARGET)/images/firmware.bin),)
-	@$(call PREPARE_REPACK,firmware.bin,8192,,,nor)
+endif
+	@$(call CHECK_SIZE,firmware.bin,$(shell expr $(subst ",,$(BR2_OPENIPC_FLASH_SIZE)) \* 1024 - $$(( $(or $(BR2_OPENIPC_NOR_FIRMWARE_OFFSET),0x50000) / 1024 )) - 256))
+	@$(call CHECK_KERNEL_READ)
+	@$(call REPACK_NOR_SPLIT)
 else
 ifeq ($(BR2_TARGET_ROOTFS_SQUASHFS),y)
 ifeq ($(BR2_OPENIPC_SOC_VENDOR),"rockchip")
@@ -190,17 +204,33 @@ else
 	@$(call PREPARE_REPACK,uImage,2048,rootfs.squashfs,8192,nor)
 endif
 endif
+endif
+# A NOR+NAND build (ultimate with BR2_TARGET_ROOTFS_UBI) packages its NAND
+# image whichever NOR layout it ships.
 ifeq ($(BR2_TARGET_ROOTFS_UBI),y)
 ifneq ($(filter $(BR2_OPENIPC_SOC_VENDOR),"rockchip" "sigmastar"),)
 	@$(call PREPARE_REPACK,,,rootfs.ubi,16384,nand)
 else ifneq ($(wildcard $(PWD)/br-ext-chip-$(subst ",,$(BR2_OPENIPC_SOC_VENDOR))/board/$(subst ",,$(BR2_OPENIPC_SOC_FAMILY))/nand-fit.its),)
-# FIT NAND (board/<family>/nand-fit.its): the kernel lives in the `kernel` UBI
-# volume, so the package carries what sysupgrade writes into each volume --
-# fitImage and rootfs.ubifs -- and rootfs.ubi for a fresh install. Measured
-# against the volume sizes in the board's ubinize-nand.cfg.
-	@$(call CHECK_SIZE,fitImage,4096)
-	@$(call CHECK_SIZE,rootfs.ubifs,32768)
-	@$(call CHECK_SIZE,rootfs.ubi,16384)
+# FIT NAND (board/<family>/nand-fit.its): the kernel lives inside the UBIFS
+# rootfs (/boot, see external.mk), so the package carries what sysupgrade
+# writes -- rootfs.ubifs -- plus rootfs.ubi for a fresh install, and fitImage
+# as the SoC witness sysupgrade reads beside a UBIFS rootfs. No volume bounds
+# either image: sysupgrade sizes the volumes to them. rootfs.ubi is the whole
+# UBI image a fresh install loads into RAM at 0x42000000 and writes from there,
+# so it is held to the 24M the installer stages (openipc.org's 0x1800000),
+# which still clears the relocated U-Boot at the top of a 64M part
+# (hi3516ev200).
+#
+# gk7205v500 is held to 32M instead: its ultimate build carries the NPU's
+# object detectors (xmnpu-models, 22 MB, NAND only), which take rootfs.ubi to
+# about 29.5M. Its parts have 128M of DDR, so the image still clears U-Boot,
+# but a fresh install has to stage at least 0x1E00000 for it -- the 0x1800000
+# above would truncate it. sysupgrade writes rootfs.ubifs and is unaffected.
+ifeq ($(BR2_OPENIPC_SOC_FAMILY),"gk7205v500")
+	@$(call CHECK_SIZE,rootfs.ubi,32768)
+else
+	@$(call CHECK_SIZE,rootfs.ubi,24576)
+endif
 	@$(call REPACK_NAND_FIT)
 else
 	@$(call PREPARE_REPACK,uImage,4096,rootfs.ubi,16384,nand)
@@ -208,7 +238,6 @@ endif
 endif
 ifeq ($(BR2_TARGET_ROOTFS_INITRAMFS),y)
 	@$(call PREPARE_REPACK,uImage,16384,,,initramfs)
-endif
 endif
 endif
 
@@ -299,6 +328,22 @@ endef
 # 2026-08-18. 32KB is the threshold because what tips these boards is a change
 # to the shared overlay, which is single-digit KB at a time; a board under that
 # is a couple of ordinary commits from red, and a board over it is not.
+# The uImage at the start of firmware.bin against what a bootloader in the field
+# reads from there to boot it (BR2_OPENIPC_NOR_KERNEL_READ_SIZE), in bytes: one
+# byte over is a kernel read short and a failed CRC. Measured as a bootloader
+# sees it, from firmware.bin's own uImage header (64 bytes, then the data size
+# big-endian at byte 12): the fixed-slot package's repack has already renamed
+# images/uImage on the boards that ship one.
+define CHECK_KERNEL_READ
+	hex=$$(od -An -tx1 -j12 -N4 $(TARGET)/images/firmware.bin | tr -d ' \n'); \
+	test -n "$$hex" || exit 1; \
+	size=$$((64 + 0x$$hex)); \
+	limit=$$(( $(or $(BR2_OPENIPC_NOR_KERNEL_READ_SIZE),0x200000) )); \
+	echo "- uImage: [$$((size / 1024))KB/$$((limit / 1024))KB read by the bootloader]"; \
+	if test $$size -gt $$limit; then \
+		echo "-- size exceeded by: $$((size - limit)) bytes; bootloaders reading $$((limit / 1024))KB would cut it short"; exit 1; fi
+endef
+
 define CHECK_SIZE
 	$(eval FILE_SIZE = $(shell expr $(shell stat -c %s $(TARGET)/images/$(1) || echo 0) / 1024))
 	if test $(FILE_SIZE) -eq 0; then exit 1; fi
@@ -325,6 +370,34 @@ define REPACK_FIRMWARE
 	# order loses the checksum and leaves a short image that sysupgrade's
 	# `md5sum -c *.md5sum` then cannot see at all.
 	cd $(TARGET)/images && tar -czf $(ARCHIVE) $(KERNEL_MD5) $(ROOTFS_MD5) $(KERNEL) $(ROOTFS)
+	rm -f $(TARGET)/images/*.md5sum
+endef
+
+# Whether uImage and rootfs.squashfs fit the fixed slots beside a split image:
+# the uImage under 1984K (see the repack target), the rootfs within $(1) KB,
+# both counted in whole KB as CHECK_SIZE counts them. "y" or empty.
+FIXED_SLOTS_FIT = $(shell k=$$(( $$(stat -c %s $(TARGET)/images/uImage 2>/dev/null || echo 0) / 1024 )); \
+	r=$$(( $$(stat -c %s $(TARGET)/images/rootfs.squashfs 2>/dev/null || echo 0) / 1024 )); \
+	[ $$k -gt 0 ] && [ $$k -le 1983 ] && [ $$r -gt 0 ] && [ $$r -le $(1) ] && echo y)
+
+define FIXED_SLOTS_SKIP
+	k=$$(( $$(stat -c %s $(TARGET)/images/uImage) / 1024 )); \
+	r=$$(( $$(stat -c %s $(TARGET)/images/rootfs.squashfs) / 1024 )); \
+	over=; \
+	[ $$k -le 1983 ] || over="uImage $${k}KB/1983KB"; \
+	[ $$r -le $(1) ] || over="$${over:+$$over, }rootfs.squashfs $${r}KB/$(1)KB"; \
+	echo "::warning::$(BR2_OPENIPC_SOC_MODEL) $(BR2_OPENIPC_VARIANT): $$over outgrew the fixed slot;" \
+		"shipping the split package only"
+endef
+
+# The split NOR package: firmware.bin alone, under its own name so a sysupgrade
+# that predates the layout never sees it. Copies, as REPACK_NAND_FIT does.
+define REPACK_NOR_SPLIT
+	cd $(TARGET)/images && cp -f firmware.bin firmware.bin.$(BR2_OPENIPC_SOC_MODEL) && \
+		md5sum firmware.bin.$(BR2_OPENIPC_SOC_MODEL) > firmware.bin.$(BR2_OPENIPC_SOC_MODEL).md5sum
+	# Checksums first, as in REPACK_FIRMWARE.
+	cd $(TARGET)/images && tar -czf openipc.$(BR2_OPENIPC_SOC_MODEL)-nor-$(BR2_OPENIPC_VARIANT)-split.tgz \
+		firmware.bin.$(BR2_OPENIPC_SOC_MODEL).md5sum firmware.bin.$(BR2_OPENIPC_SOC_MODEL)
 	rm -f $(TARGET)/images/*.md5sum
 endef
 

@@ -30,7 +30,12 @@ echo "*** FAILSAFE: bringing up network + SSH only, services skipped ***"
 # are gone for good, not merely delayed. Reordering is free here because this
 # list is hand-written rather than a directory glob. S31hostname comes first
 # for the same reason: syslogd samples the hostname once, at startup.
-for s in S29pstore S38mdev S31hostname S40network S01syslogd S02klogd S50dropbear; do
+#
+# S02sysctl goes first: /etc/sysctl.conf narrows serial SysRq, and a rescue
+# session is when someone is plugging a UART adapter in, whose BREAK and stray
+# byte would otherwise run any key -- reboot, crash, kill-all, or a thaw that
+# never returns on the pre-4.9 kernels.
+for s in S02sysctl S29pstore S38mdev S31hostname S40network S01syslogd S02klogd S50dropbear; do
 	[ -x "/etc/init.d/$s" ] || continue
 	"/etc/init.d/$s" start
 
@@ -74,6 +79,16 @@ for s in S29pstore S38mdev S31hostname S40network S01syslogd S02klogd S50dropbea
 		done
 	fi
 done
+
+# The failed boot's own log, as S03pmsglog kept it in the pmsg ring across
+# the reset that brought the camera here: what majestic and the kernel said
+# before the boot that never settled ended. Without it the breadcrumb below is
+# all a report can say. Kept beside it, overlay only; crashlog-send sends both.
+# An earlier fall's copy goes first, so a note is never beside another boot's
+# log when this one left none.
+rm -f /etc/crash/failsafe.log 2>/dev/null
+[ -s /sys/fs/pstore/pmsg-ramoops-0 ] && mkdir -p /etc/crash 2>/dev/null &&
+	cp /sys/fs/pstore/pmsg-ramoops-0 /etc/crash/failsafe.log 2>/dev/null
 
 # Leave a breadcrumb the WebUI reads on the next normal boot, so a fault that
 # left no pstore panic -- a service that simply never came up -- still shows the

@@ -45,14 +45,14 @@ HISILICON_OSDRV_HI3516EV200_IMX335_5M_SOCS = hi3516ev300 hi3516dv200 gk7205v300 
 
 ifneq ($(filter $(OPENIPC_SOC_MODEL),$(HISILICON_OSDRV_HI3516EV200_IMX335_5M_SOCS)),)
 define HISILICON_OSDRV_HI3516EV200_IMX335_LAYOUT
-	for d in $(TARGET_DIR)/etc/sensors $(TARGET_DIR)/etc/sensors/WDR; do \
+	for d in $(TARGET_DIR)/etc/sensors; do \
 		rm -f $$d/imx335_i2c_4M.ini; \
 		ln -sf imx335_i2c_5M.ini $$d/5M_imx335.ini; \
 	done
 endef
 else
 define HISILICON_OSDRV_HI3516EV200_IMX335_LAYOUT
-	for d in $(TARGET_DIR)/etc/sensors $(TARGET_DIR)/etc/sensors/WDR; do \
+	for d in $(TARGET_DIR)/etc/sensors; do \
 		mv -f $$d/4M_imx335_i2c.ini $$d/imx335_i2c_4M.ini; \
 		mv -f $$d/imx335_i2c_5M.ini $$d/5M_imx335.ini; \
 	done
@@ -62,9 +62,19 @@ endif
 define HISILICON_OSDRV_HI3516EV200_INSTALL_TARGET_CMDS
 	$(INSTALL) -m 755 -d $(TARGET_DIR)/etc/sensors
 	$(INSTALL) -m 644 -t $(TARGET_DIR)/etc/sensors $(HISILICON_OSDRV_HI3516EV200_PKGDIR)/files/sensor/config/*.ini
+	# SP2305 answers with OmniVision's id, 0x2735 at 0x02/0x03, and no register
+	# tells the two parts apart, so ipctool reports it as ov2735 -- a name this
+	# family has no profile for, and majestic stops at "No matches for 'ov2735'".
+	# The only driver here for that id is libsns_sp2305, so either detected
+	# spelling (ov2735 from the u-boot env, ov2735_i2c from majestic's own
+	# probe) has to land on its profile.
+	ln -sf sp2305_i2c_1080p.ini $(TARGET_DIR)/etc/sensors/ov2735_i2c_1080p.ini
 
-	$(INSTALL) -m 755 -d $(TARGET_DIR)/etc/sensors/WDR
-	$(INSTALL) -m 644 -t $(TARGET_DIR)/etc/sensors/WDR $(HISILICON_OSDRV_HI3516EV200_PKGDIR)/files/sensor/config/WDR/*.ini
+	# No WDR/ copies of the IMX335 profiles: majestic switches the linear one
+	# to line WDR itself (isp.wdrMode), and a copy only drifted from it -- the
+	# 5M one ran the sensor at 15 fps where it does 22. Removed outright so a
+	# rebuild over an earlier target does not ship the old directory.
+	rm -rf $(TARGET_DIR)/etc/sensors/WDR
 	$(HISILICON_OSDRV_HI3516EV200_IMX335_LAYOUT)
 
 	$(INSTALL) -m 755 -d $(TARGET_DIR)/etc/sensors/high-fps
@@ -76,6 +86,7 @@ define HISILICON_OSDRV_HI3516EV200_INSTALL_TARGET_CMDS
 	$(INSTALL) -m 644 -t $(TARGET_DIR)/etc/sensors/iq $(HISILICON_OSDRV_HI3516EV200_PKGDIR)/files/sensor/iq/f23.ini
 	$(INSTALL) -m 644 -t $(TARGET_DIR)/etc/sensors/iq $(HISILICON_OSDRV_HI3516EV200_PKGDIR)/files/sensor/iq/sc2235.ini
 	$(INSTALL) -m 644 -t $(TARGET_DIR)/etc/sensors/iq $(HISILICON_OSDRV_HI3516EV200_PKGDIR)/files/sensor/iq/sc2239.ini
+	$(INSTALL) -m 644 -t $(TARGET_DIR)/etc/sensors/iq $(HISILICON_OSDRV_HI3516EV200_PKGDIR)/files/sensor/iq/ov2735.ini
 	ln -sf imx307.ini $(TARGET_DIR)/etc/sensors/iq/default.ini
 
 	$(INSTALL) -m 755 -d $(TARGET_DIR)/lib/modules/4.9.37/hisilicon
