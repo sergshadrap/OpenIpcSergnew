@@ -5,7 +5,7 @@
 ################################################################################
 
 HISILICON_OPENSDK_SITE = $(call github,openipc,openhisilicon,$(HISILICON_OPENSDK_VERSION))
-HISILICON_OPENSDK_VERSION = 95a52746215bcfcf663ede022ea2cf07a4fbe21b
+HISILICON_OPENSDK_VERSION = 5f734e7a9fde7114680abd1327633b5555c4815c
 
 HISILICON_OPENSDK_LICENSE = GPL-3.0
 HISILICON_OPENSDK_LICENSE_FILES = LICENSE
@@ -268,6 +268,7 @@ HISILICON_OPENSDK_SENSORS_hi3516cv6xx = \
 	cvsens_cv2003/libsns_cv2003 \
 	galaxycore_gc4023/libsns_gc4023 \
 	galaxycore_gc4653/libsns_gc4653 \
+	imagedesign_mis20s1/libsns_mis20s1 \
 	omnivision_os04d10/libsns_os04d10 \
 	smart_sc431hai/libsns_sc431hai \
 	smart_sc4336p/libsns_sc4336p \
@@ -293,7 +294,8 @@ HISILICON_OPENSDK_SENSORS_hi3519dv500 = \
 HISILICON_OPENSDK_SENSORS_gk7205v500 = \
 	imagedesign_mis2008/libsns_mis2008 \
 	imagedesign_mis2009/libsns_mis2009 \
-	smart_sc223a/libsns_sc223a
+	smart_sc223a/libsns_sc223a \
+	smart_sc401ai/libsns_sc401ai
 
 # gk7206v100 builds the GK7206 SDK's own drivers (sensor/gk7206v100) against
 # musl. Installed: the 2-5MP subset of what the SDK's sample_comm_isp.c

@@ -53,7 +53,35 @@ define HISILICON_OSDRV_HI3516CV6XX_SONY_PROFILES
 	$(INSTALL) -m 755 -d $(TARGET_DIR)/etc/sensors/modes
 	$(INSTALL) -m 644 -t $(TARGET_DIR)/etc/sensors/modes $(HISILICON_OSDRV_HI3516CV6XX_PKGDIR)/files/sensor/config/modes/*.ini
 	$(INSTALL) -m 644 -t $(TARGET_DIR)/etc/sensors $(HISILICON_OSDRV_HI3516CV6XX_PKGDIR)/files/sensor/config/imx662_i2c_1080p.ini
+	# The IMX662's 3DNR ladder and day scene, from the stock firmware of a K662C6S. About
+	# 3 KB compressed.
+	$(INSTALL) -m 755 -d $(TARGET_DIR)/etc/sensors/iq
+	$(INSTALL) -m 644 -t $(TARGET_DIR)/etc/sensors/iq $(HISILICON_OSDRV_HI3516CV6XX_PKGDIR)/files/sensor/iq/imx662.ini
 endef
+endif
+
+# AIBNR models for the Hi3516CV610 NPU, read from /usr/share/aiisp by
+# majestic's isp.aibnr setting. The vendor's AIISP reference has one model file
+# per frame size; the high_iso one is the second model its sample switches to
+# above ISO bucket 1.
+#
+# Source: Hi3516CV610_SDK_V1.0.2.0, out/model/aiisp. 2560x1440 is the SDK's
+# prebuilt pair, unchanged. The SDK carries no 1080p pair, so 1920x1080 is the
+# SDK's own model_convert.py run unmodified (`-s 1920x1080`) with the CANN 6.10
+# ATC from SVP_NNN_PC_V5.0.2.3 of the same release.
+#
+# Sizes: the six profiles above that run at 1920x1080 (CV2003, IMX662, SP2308)
+# or 2560x1440 (GC4653, SC4336P, VS4388). IMX335 at 2592x1944 is left out:
+# measured on a hi3516cv613, the NPU takes 33 ms per 1080p frame, so 5 MP
+# would run near 10 fps. About 460 KB of squashfs. Ultimate only, the flavour
+# whose majestic has the setting.
+ifeq ($(OPENIPC_VARIANT),ultimate)
+define HISILICON_OSDRV_HI3516CV6XX_AIISP_MODELS
+	$(INSTALL) -m 755 -d $(TARGET_DIR)/usr/share/aiisp
+	$(INSTALL) -m 644 -t $(TARGET_DIR)/usr/share/aiisp $(HISILICON_OSDRV_HI3516CV6XX_PKGDIR)/files/aiisp/aibnr_model_*.bin
+endef
+else
+HISILICON_OSDRV_HI3516CV6XX_AIISP_MODELS =
 endif
 
 define HISILICON_OSDRV_HI3516CV6XX_INSTALL_TARGET_CMDS
@@ -78,6 +106,8 @@ define HISILICON_OSDRV_HI3516CV6XX_INSTALL_TARGET_CMDS
 	# camera needs `fw_setenv sensor imx662`; majestic then finds it by name.
 	$(HISILICON_OSDRV_HI3516CV6XX_SONY_PROFILES)
 
+	$(HISILICON_OSDRV_HI3516CV6XX_AIISP_MODELS)
+
 	# SP2308, on both variants with its driver: ipcinfo names chip ID
 	# 0x5302 sp2308, which is the name majestic looks this profile up by.
 	# 1080p30 RAW10 on MIPI lanes 0 and 2, BGGR (checked under red, green
@@ -100,6 +130,23 @@ define HISILICON_OSDRV_HI3516CV6XX_INSTALL_TARGET_CMDS
 	$(INSTALL) -m 755 -d $(TARGET_DIR)/etc/sensors/iq
 	$(INSTALL) -m 644 -t $(TARGET_DIR)/etc/sensors/iq $(HISILICON_OSDRV_HI3516CV6XX_PKGDIR)/files/sensor/iq/sc4336p.ini
 
+	# CV2003's: the tuning the vendor's own firmware runs on this sensor
+	# (OpenIPC/majestic#355), day and IR halves, trimmed the same way. About
+	# 10 KB compressed.
+	$(INSTALL) -m 644 -t $(TARGET_DIR)/etc/sensors/iq $(HISILICON_OSDRV_HI3516CV6XX_PKGDIR)/files/sensor/iq/cv2003.ini
+
+	# GC4653, VS4388 and MIS20S1: the same vendor's own tuning for them, from
+	# the stock firmware of its CV610 cameras (OpenIPC/majestic#356, #357),
+	# trimmed the same way. About 10 KB compressed each.
+	$(INSTALL) -m 644 -t $(TARGET_DIR)/etc/sensors/iq \
+		$(HISILICON_OSDRV_HI3516CV6XX_PKGDIR)/files/sensor/iq/gc4653.ini \
+		$(HISILICON_OSDRV_HI3516CV6XX_PKGDIR)/files/sensor/iq/vs4388.ini \
+		$(HISILICON_OSDRV_HI3516CV6XX_PKGDIR)/files/sensor/iq/mis20s1.ini
+
+	# GC4023's: the vendor SDK's own scene_auto tuning for it, day and IR
+	# halves, trimmed the same way as sc4336p.ini. About 12 KB compressed.
+	$(INSTALL) -m 644 -t $(TARGET_DIR)/etc/sensors/iq $(HISILICON_OSDRV_HI3516CV6XX_PKGDIR)/files/sensor/iq/gc4023.ini
+
 	# CV2003, GC4653 and VS4388, on both variants with their drivers: the
 	# sensors of one vendor's CV610/CV608 cameras, which are 8 MB lite-class
 	# boards (OpenIPC/majestic#355, #356, #357). Every one of them wires the
@@ -112,6 +159,19 @@ define HISILICON_OSDRV_HI3516CV6XX_INSTALL_TARGET_CMDS
 		$(HISILICON_OSDRV_HI3516CV6XX_PKGDIR)/files/sensor/config/cv2003_i2c_1080p.ini \
 		$(HISILICON_OSDRV_HI3516CV6XX_PKGDIR)/files/sensor/config/gc4653_i2c_4M.ini \
 		$(HISILICON_OSDRV_HI3516CV6XX_PKGDIR)/files/sensor/config/vs4388_i2c_4M.ini
+
+	# MIS20S1, on both variants with its driver: 1920x1080p30 RAW12, RGGB,
+	# linear, from the vendor's own CV610 driver for it, wired like the
+	# boards above. ipcinfo names it mis20s1.
+	$(INSTALL) -m 644 -t $(TARGET_DIR)/etc/sensors $(HISILICON_OSDRV_HI3516CV6XX_PKGDIR)/files/sensor/config/mis20s1_i2c_1080p.ini
+
+	# GC4023, on both variants with its driver: 2560x1440p30 RAW10, RGGB,
+	# linear, wired like the GC4653 above. The values are the SDK's own for
+	# this sensor (its VI-device-1 MIPI attributes and ISP public
+	# attributes), not measured on a board. ipcinfo names chip ID 0x4023
+	# gc4023.
+	$(INSTALL) -m 644 -t $(TARGET_DIR)/etc/sensors \
+		$(HISILICON_OSDRV_HI3516CV6XX_PKGDIR)/files/sensor/config/gc4023_i2c_4M.ini
 
 endef
 
